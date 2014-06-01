@@ -2063,10 +2063,16 @@ static BOOL *FXFormSetValueForKey(id<FXForm> form, id value, NSString *key)
 	self.toolbar.items = [self toolbarItems];
 }
 
--(void)reloadToolbarEnabledState
+-(void)toolbarWillBecomeVisible
 {
+	// Gray out prev/next buttons when there are no prev/next responders
 	self.toolbarPreviousButton.enabled = ([self previousCellResponder] != nil);
 	self.toolbarNextButton.enabled     = ([self nextCellResponder] != nil);
+	
+	// Make tint colors match the window tint colors
+	self.toolbarPreviousButton.tintColor = self.window.tintColor;
+	self.toolbarNextButton.tintColor     = self.window.tintColor;
+	self.toolbarCloseButton.tintColor    = self.window.tintColor;
 }
 
 -(NSArray*)toolbarItems
@@ -2086,7 +2092,7 @@ static BOOL *FXFormSetValueForKey(id<FXForm> form, id value, NSString *key)
 		__weak FXFormBaseCell *weakSelf = self;
 		toolbar.willMoveToWindow = ^(UIWindow *newWindow) {
 			if (newWindow) {
-				[weakSelf reloadToolbarEnabledState];
+				[weakSelf toolbarWillBecomeVisible];
 			}
 		};
 		_toolbar = toolbar;
