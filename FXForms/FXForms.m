@@ -42,6 +42,11 @@
 #pragma GCC diagnostic ignored "-Wgnu"
 
 
+#define APPLE_PRIVATE_API_UIBarButtonSystemItem_Previous ((UIBarButtonSystemItem)105)
+#define APPLE_PRIVATE_API_UIBarButtonSystemItem_Next ((UIBarButtonSystemItem)106)
+
+
+
 static NSString *const FXFormsException = @"FXFormsException";
 
 
@@ -332,6 +337,29 @@ static BOOL *FXFormSetValueForKey(id<FXForm> form, id value, NSString *key)
 }
 
 
+#pragma mark - Toolbar
+
+
+@interface FXFormsToolbar : UIToolbar
+
+// FXForms uses this callback for finding the previousCellResponder/nextCellResponder
+@property (nonatomic, copy) void (^willMoveToWindow)(UIWindow *newWindow);
+
+@end
+
+@implementation FXFormsToolbar
+
+- (void)willMoveToWindow:(UIWindow *)newWindow
+{
+	[super willMoveToWindow:newWindow];
+	if (self.willMoveToWindow) {
+		self.willMoveToWindow(newWindow);
+	}
+}
+
+@end
+
+
 @interface FXFormController () <UITableViewDataSource, UITableViewDelegate>
 
 @property (nonatomic, copy) NSArray *sections;
@@ -343,6 +371,18 @@ static BOOL *FXFormSetValueForKey(id<FXForm> form, id value, NSString *key)
 - (void)performAction:(SEL)selector withSender:(id)sender;
 
 @end
+
+@interface FXFormBaseCell ()
+
+@property (nonatomic, strong) UIBarButtonItem *toolbarPreviousButton;
+@property (nonatomic, strong) UIBarButtonItem *toolbarNextButton;
+@property (nonatomic, strong) UIBarButtonItem *toolbarCloseButton;
+@property (nonatomic, strong) UIToolbar *toolbar;
+
+-(void)assignToolbarCloseButtonTitle:(NSString*)title;
+@end
+
+
 
 
 @interface FXFormField ()
@@ -1146,6 +1186,11 @@ static BOOL *FXFormSetValueForKey(id<FXForm> form, id value, NSString *key)
 #pragma mark -
 #pragma mark Controllers
 
+@interface FXFormController ()
+
+@property (nonatomic, strong) NSString *toolbarCloseButtonTitle;
+
+@end
 
 @implementation FXFormController
 
@@ -1327,6 +1372,11 @@ static BOOL *FXFormSetValueForKey(id<FXForm> form, id value, NSString *key)
 {
     _form = form;
     self.sections = [FXFormSection sectionsWithForm:form controller:self];
+	
+	if ([(NSObject*)form respondsToSelector:@selector(toolbarCloseButtonTitle)]) {
+		NSString *title = [form toolbarCloseButtonTitle];
+		self.toolbarCloseButtonTitle = title;
+	}
 }
 
 - (NSUInteger)numberOfSections
@@ -1478,6 +1528,13 @@ static BOOL *FXFormSetValueForKey(id<FXForm> form, id value, NSString *key)
     [field.cellConfig enumerateKeysAndObjectsUsingBlock:^(NSString *keyPath, id value, __unused BOOL *stop) {
         [cell setValue:value forKeyPath:keyPath];
     }];
+	
+	if ([cell isKindOfClass:[FXFormBaseCell class]]) {
+		FXFormBaseCell *formBaseCell = (FXFormBaseCell*)cell;
+		if([formBaseCell respondsToSelector:@selector(assignToolbarCloseButtonTitle:)]) {
+			[formBaseCell assignToolbarCloseButtonTitle:self.toolbarCloseButtonTitle];
+		}
+	}
     
     //set form field
     ((id<FXFormFieldCell>)cell).field = field;
@@ -1780,6 +1837,13 @@ static BOOL *FXFormSetValueForKey(id<FXForm> form, id value, NSString *key)
     }
 }
 
+- (void)layoutSubviews
+{
+    [super layoutSubviews];
+	
+	self.toolbar.frame = CGRectMake(0, 0, self.frame.size.width, 45);
+}
+
 - (UITableView *)tableView
 {
     UITableView *view = (UITableView *)[self superview];
@@ -1788,6 +1852,66 @@ static BOOL *FXFormSetValueForKey(id<FXForm> form, id value, NSString *key)
         view = (UITableView *)[view superview];
     }
     return view;
+}
+
+- (NSIndexPath *)indexPathForPreviousCell
+{
+    UITableView *tableView = [self tableView];
+    NSIndexPath *indexPath = [tableView indexPathForCell:self];
+    if (indexPath)
+    {
+        //get prev indexpath
+        if (indexPath.row > 0)
+        {
+            return [NSIndexPath indexPathForRow:indexPath.row - 1 inSection:indexPath.section];
+		}
+		else
+		{
+			if (indexPath.section > 0) {
+				NSInteger numberOfRows = [tableView numberOfRowsInSection:indexPath.section - 1];
+				NSInteger lastRow = numberOfRows - 1;
+				if (lastRow >= 0) {
+					return [NSIndexPath indexPathForRow:lastRow inSection:indexPath.section - 1];
+				}
+			}
+        }
+    }
+    return nil;
+}
+
+- (UITableViewCell <FXFormFieldCell> *)previousCell
+{
+    UITableView *tableView = [self tableView];
+    NSIndexPath *indexPath = [self indexPathForPreviousCell];
+    if (indexPath)
+    {
+        //get prev cell
+        return (UITableViewCell <FXFormFieldCell> *)[tableView cellForRowAtIndexPath:indexPath];
+    }
+    return nil;
+}
+
+-(UIResponder*)previousCellResponder
+{
+	// Look for a cell that can become first reponder
+	UITableViewCell <FXFormFieldCell> *cell = [self previousCell];
+	do {
+		if (![cell isKindOfClass:[FXFormBaseCell class]]) {
+			break;
+		}
+		FXFormBaseCell *formBaseCell = (FXFormBaseCell*)cell;
+		if ([formBaseCell canBecomeFirstResponder]) {
+			break;
+		}
+		cell = [formBaseCell previousCell];
+	} while (cell);
+	
+	return cell;
+}
+
+-(void)makePreviousCellFirstReponder
+{
+	[[self previousCellResponder] becomeFirstResponder];
 }
 
 - (NSIndexPath *)indexPathForNextCell
@@ -1819,6 +1943,29 @@ static BOOL *FXFormSetValueForKey(id<FXForm> form, id value, NSString *key)
         return (UITableViewCell <FXFormFieldCell> *)[tableView cellForRowAtIndexPath:indexPath];
     }
     return nil;
+}
+
+-(UIResponder*)nextCellResponder
+{
+	// Look for a cell that can become first reponder
+	UITableViewCell <FXFormFieldCell> *cell = [self nextCell];
+	do {
+		if (![cell isKindOfClass:[FXFormBaseCell class]]) {
+			break;
+		}
+		FXFormBaseCell *formBaseCell = (FXFormBaseCell*)cell;
+		if ([formBaseCell canBecomeFirstResponder]) {
+			break;
+		}
+		cell = [formBaseCell nextCell];
+	} while (cell);
+	
+	return cell;
+}
+
+-(void)makeNextCellFirstReponder
+{
+	[[self nextCellResponder] becomeFirstResponder];
 }
 
 - (void)didSelectWithTableView:(UITableView *)tableView controller:(UIViewController *)controller
@@ -1868,6 +2015,100 @@ static BOOL *FXFormSetValueForKey(id<FXForm> form, id value, NSString *key)
     }
 }
 
+#pragma mark - Toolbar
+
+-(UIBarButtonItem *)toolbarPreviousButton
+{
+	if (!_toolbarPreviousButton) {
+		UIBarButtonItem *button = [[UIBarButtonItem alloc] initWithBarButtonSystemItem:APPLE_PRIVATE_API_UIBarButtonSystemItem_Previous
+																				target:self
+																				action:@selector(toolbarPreviousButtonAction)];
+		_toolbarPreviousButton = button;
+	}
+	return _toolbarPreviousButton;
+}
+
+-(UIBarButtonItem *)toolbarNextButton
+{
+	if (!_toolbarNextButton) {
+		UIBarButtonItem *button = [[UIBarButtonItem alloc] initWithBarButtonSystemItem:APPLE_PRIVATE_API_UIBarButtonSystemItem_Next
+																				target:self
+																				action:@selector(toolbarNextButtonAction)];
+		_toolbarNextButton = button;
+	}
+	return _toolbarNextButton;
+}
+
+-(UIBarButtonItem *)toolbarCloseButton
+{
+	if (!_toolbarCloseButton) {
+		_toolbarCloseButton = [self toolbarCloseButtonWithTitle:@"Close"];
+	}
+	return _toolbarCloseButton;
+}
+
+-(UIBarButtonItem *)toolbarCloseButtonWithTitle:(NSString*)title
+{
+	UIBarButtonItem *button = [[UIBarButtonItem alloc] initWithTitle:title
+															   style:UIBarButtonItemStyleBordered
+															  target:self
+															  action:@selector(toolbarCloseButtonAction)];
+	return button;
+}
+
+-(void)assignToolbarCloseButtonTitle:(NSString*)title
+{
+	// Replace the old close button with a new close button that uses the title
+	_toolbarCloseButton = [self toolbarCloseButtonWithTitle:title];
+	self.toolbar.items = [self toolbarItems];
+}
+
+-(void)reloadToolbarEnabledState
+{
+	self.toolbarPreviousButton.enabled = ([self previousCellResponder] != nil);
+	self.toolbarNextButton.enabled     = ([self nextCellResponder] != nil);
+}
+
+-(NSArray*)toolbarItems
+{
+	UIBarButtonItem *space0 = [[UIBarButtonItem alloc] initWithBarButtonSystemItem:UIBarButtonSystemItemFixedSpace target:nil action:nil];
+	space0.width = 15;
+	UIBarButtonItem *space1 = [[UIBarButtonItem alloc] initWithBarButtonSystemItem:UIBarButtonSystemItemFlexibleSpace target:nil action:nil];
+	return @[self.toolbarPreviousButton, space0, self.toolbarNextButton, space1, self.toolbarCloseButton];
+}
+
+-(UIToolbar*)toolbar
+{
+	if (!_toolbar) {
+		FXFormsToolbar *toolbar = [FXFormsToolbar new];
+		toolbar.backgroundColor = [UIColor whiteColor];
+		toolbar.items = [self toolbarItems];
+		__weak FXFormBaseCell *weakSelf = self;
+		toolbar.willMoveToWindow = ^(UIWindow *newWindow) {
+			if (newWindow) {
+				[weakSelf reloadToolbarEnabledState];
+			}
+		};
+		_toolbar = toolbar;
+	}
+	return _toolbar;
+}
+
+-(void)toolbarPreviousButtonAction
+{
+	[self makePreviousCellFirstReponder];
+}
+
+-(void)toolbarNextButtonAction
+{
+	[self makeNextCellFirstReponder];
+}
+
+-(void)toolbarCloseButtonAction
+{
+	[self resignFirstResponder];
+}
+
 @end
 
 
@@ -1891,6 +2132,7 @@ static BOOL *FXFormSetValueForKey(id<FXForm> form, id value, NSString *key)
     self.textField.font = [UIFont systemFontOfSize:self.textLabel.font.pointSize];
     self.textField.minimumFontSize = FXFormLabelMinFontSize(self.textLabel);
     self.textField.textColor = [UIColor colorWithRed:0.275f green:0.376f blue:0.522f alpha:1.000f];
+	self.textField.inputAccessoryView = self.toolbar;
     self.textField.delegate = self;
     [self.contentView addSubview:self.textField];
     
@@ -2013,7 +2255,7 @@ static BOOL *FXFormSetValueForKey(id<FXForm> form, id value, NSString *key)
 {
     if (self.textField.returnKeyType == UIReturnKeyNext)
     {
-        [[self nextCell] becomeFirstResponder];
+		[self makeNextCellFirstReponder];
     }
     else
     {
@@ -2081,6 +2323,11 @@ static BOOL *FXFormSetValueForKey(id<FXForm> form, id value, NSString *key)
     return [self.textField becomeFirstResponder];
 }
 
+- (BOOL)resignFirstResponder
+{
+	return [self.textField resignFirstResponder];
+}
+
 @end
 
 
@@ -2120,6 +2367,7 @@ static BOOL *FXFormSetValueForKey(id<FXForm> form, id value, NSString *key)
     self.textView.font = [UIFont systemFontOfSize:17];
     self.textView.textColor = [UIColor colorWithRed:0.275f green:0.376f blue:0.522f alpha:1.000f];
     self.textView.backgroundColor = [UIColor clearColor];
+	self.textView.inputAccessoryView = self.toolbar;
     self.textView.delegate = self;
     self.textView.scrollEnabled = NO;
     [self.contentView addSubview:self.textView];
@@ -2272,6 +2520,11 @@ static BOOL *FXFormSetValueForKey(id<FXForm> form, id value, NSString *key)
 - (BOOL)becomeFirstResponder
 {
     return [self.textView becomeFirstResponder];
+}
+
+- (BOOL)resignFirstResponder
+{
+	return [self.textView resignFirstResponder];
 }
 
 @end
@@ -2444,6 +2697,11 @@ static BOOL *FXFormSetValueForKey(id<FXForm> form, id value, NSString *key)
 - (BOOL)canBecomeFirstResponder
 {
     return YES;
+}
+
+- (UIView *)inputAccessoryView
+{
+	return self.toolbar;
 }
 
 - (UIView *)inputView
@@ -2629,6 +2887,11 @@ static BOOL *FXFormSetValueForKey(id<FXForm> form, id value, NSString *key)
 - (BOOL)canBecomeFirstResponder
 {
     return YES;
+}
+
+- (UIView *)inputAccessoryView
+{
+	return self.toolbar;
 }
 
 - (UIView *)inputView

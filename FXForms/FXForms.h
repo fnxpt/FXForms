@@ -90,6 +90,8 @@ static NSString *const FXFormFieldTypeImage = @"image";
 - (NSArray *)fields;
 - (NSArray *)extraFields;
 
+- (NSString*)toolbarCloseButtonTitle;
+
 // informal protocol:
 
 // - (NSDictionary *)<fieldKey>Field
@@ -183,6 +185,8 @@ static NSString *const FXFormFieldTypeImage = @"image";
 
 
 @interface FXFormBaseCell : UITableViewCell <FXFormFieldCell>
+
+@property (nonatomic, readonly) UIToolbar *toolbar;
 
 @end
 

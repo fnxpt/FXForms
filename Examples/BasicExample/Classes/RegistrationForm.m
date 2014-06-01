@@ -123,4 +123,9 @@
              ];
 }
 
+- (NSString*)toolbarCloseButtonTitle
+{
+	return @"Dismiss";
+}
+
 @end

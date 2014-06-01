@@ -27,4 +27,9 @@
     return @{FXFormFieldHeader: @"Not Registered?"};
 }
 
+- (NSString*)toolbarCloseButtonTitle
+{
+	return @"Dismiss";
+}
+
 @end
