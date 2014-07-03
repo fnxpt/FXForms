@@ -2715,6 +2715,15 @@ static BOOL *FXFormSetValueForKey(id<FXForm> form, id value, NSString *key)
     return self.datePicker;
 }
 
+-(BOOL)resignFirstResponder{
+    [super resignFirstResponder];
+    self.field.value = self.datePicker.date;
+    self.detailTextLabel.text = [self.field fieldDescription];
+    [self setNeedsLayout];
+    
+    if (self.field.action) self.field.action(self);
+}
+
 - (void)valueChanged
 {
     self.field.value = self.datePicker.date;
@@ -2888,6 +2897,20 @@ static BOOL *FXFormSetValueForKey(id<FXForm> form, id value, NSString *key)
     }
     
     [self setNeedsLayout];
+}
+
+-(BOOL)resignFirstResponder{
+    [super resignFirstResponder];
+    
+    int row = [self.pickerView selectedRowInComponent:0];
+    NSString* value = self.field.options[row];
+    
+    self.field.value = value;
+    self.detailTextLabel.text = [self.field fieldDescription] ?: [self.field.placeholder fieldDescription];
+    
+    [self setNeedsLayout];
+    
+    if (self.field.action) self.field.action(self);
 }
 
 - (BOOL)canBecomeFirstResponder
