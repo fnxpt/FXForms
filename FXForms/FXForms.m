@@ -2049,10 +2049,16 @@ static BOOL *FXFormSetValueForKey(id<FXForm> form, id value, NSString *key)
 
 -(UIBarButtonItem *)toolbarCloseButtonWithTitle:(NSString*)title
 {
+    
 	UIBarButtonItem *button = [[UIBarButtonItem alloc] initWithTitle:title
 															   style:UIBarButtonItemStyleBordered
 															  target:self
 															  action:@selector(toolbarCloseButtonAction)];
+    
+    [button setTitleTextAttributes:@{
+                                     NSFontAttributeName: [UIFont fontWithName:@"HelveticaNeue-Bold" size:17.0],
+                                     } forState:UIControlStateNormal];
+    
 	return button;
 }
 
